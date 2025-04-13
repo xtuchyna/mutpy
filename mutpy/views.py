@@ -23,6 +23,13 @@ class ViewNotifier:
     def del_view(self, views):
         self.views.remove(views)
 
+    def print_test_results(self, passed, failed):
+        print("PASSED: [{}]".format(len(passed)))
+        print("\r{}".format(', '.join([test.name + "\r\n" for test in passed])))
+        print("FAILED: [{}]".format(len(failed)))
+        print("\r{}".format(', '.join([test.name + "\r\n" for test in failed])))
+
+
     def notify_all_views(self, notify, *args, **kwargs):
         for views in self.views:
             if hasattr(views, notify):
@@ -89,6 +96,21 @@ class TextView(QuietTextView):
     def start(self):
         self.level_print('Start mutants generation and execution:')
 
+    def custom_print(self, score):
+        overall_killed = len(score.overall_mutations)
+
+        self.level_print('=== Per test metrics ===', 2)
+        for test_name, operators in score.killer_matrix.items():
+            killed_mutatnts = len(operators)
+            per_test_score = killed_mutatnts / overall_killed * 100
+            self.level_print("per test score: ({:.1f}%) for {}".format(per_test_score, test_name))
+
+        self.level_print('=== Per mutant metrics ===', 2)
+        for mutant, num_of_killed in score.per_mutant_stats.items():
+            per_mutant_score = num_of_killed / score.all_mutants * 100
+            self.level_print("per mutant score: ({:.1f}%) for {}".format(per_mutant_score, mutant))
+
+
     def end(self, score, duration):
         super().end(score, duration)
         self.level_print('all: {}'.format(score.all_mutants), 2)
@@ -102,6 +124,8 @@ class TextView(QuietTextView):
                                                                 100 * score.incompetent_mutants / score.all_mutants), 2)
             self.level_print('timeout: {} ({:.1f}%)'.format(score.timeout_mutants,
                                                             100 * score.timeout_mutants / score.all_mutants), 2)
+            self.custom_print(score)
+
             if score.all_nodes:
                 self.level_print('Coverage: {} of {} AST nodes ({:.1f}%)'.format(
                     score.covered_nodes, score.all_nodes,

@@ -1,8 +1,70 @@
 import random
 import sys
 import time
+from copy import deepcopy
+import re
+
+# for doc comparisson
+import spacy
+import en_core_web_sm
 
 from mutpy import views, utils
+
+def get_full_test_name(test_name) -> tuple:
+    regex = r'(\S+)\s+\((\S+)\)'
+    match = re.match(regex, test_name)
+    return match.group(2)
+
+class CompareOutputs:
+
+    def __init__(self):
+        self.nlp = spacy.load("en_core_web_sm")
+
+    def is_same_output(self, text1, text2):
+        # Normalize the outputs by removing leading/trailing whitespace and newlines
+        normalized_text1 = re.sub(r'\s+', ' ', text1.strip())
+        normalized_text2 = re.sub(r'\s+', ' ', text2.strip())
+
+        if normalized_text1 == normalized_text2:
+            return True
+        
+        return self.is_same_using_cosine(normalized_text1, normalized_text2)
+
+
+    # def is_same_using_spaceless(text1, text2):
+    #     # Remove all spaces, including newlines, tabs, and regular spaces
+    #     cleaned_text1 = re.sub(r'\s+', '', text1)  # \s+ matches any whitespace character (space, newline, tab) one or more times
+    #     cleanmed_text2 = re.sub(r'\s+', '', text2)
+    #     return cleaned_text1 == cleanmed_text2
+
+    def is_same_using_cosine(self, output_original, output_mutant):
+        doc1 = nlp(output_original)
+        doc2 = nlp(output_mutant)
+        
+        # Compute cosine similarity between document vectors
+        similarity = doc1.similarity(doc2)
+        return similarity > 0.95
+
+
+nlp = en_core_web_sm.load()
+doc = nlp("This is a sentence.")
+print([(w.text, w.pos_) for w in doc])
+
+
+nlp = spacy.load("en_core_web_sm")
+import en_core_web_sm
+nlp = en_core_web_sm.load()
+doc = nlp("This is a sentence.")
+print([(w.text, w.pos_) for w in doc])
+    
+
+def is_same_output(output1, output2) -> bool:
+    # Normalize the outputs by removing leading/trailing whitespace and newlines
+    normalized_output1 = re.sub(r'\s+', ' ', output1.strip())
+    normalized_output2 = re.sub(r'\s+', ' ', output2.strip())
+    
+    # Compare the normalized outputs
+    return normalized_output1 == normalized_output2
 
 
 class TestsFailAtOriginal(Exception):
@@ -20,6 +82,11 @@ class MutationScore:
         self.survived_mutants = 0
         self.covered_nodes = 0
         self.all_nodes = 0
+
+        self.overall_mutations = []
+        self.killer_matrix = {}
+        self.per_mutant_stats = {}
+
 
     def count(self):
         bottom = self.all_mutants - self.incompetent_mutants
@@ -59,6 +126,12 @@ class MutationController(views.ViewNotifier):
         self.mutation_number = mutation_number
         self.runner = runner_cls(self.test_loader, self.timeout_factor, self.stdout_manager, mutate_covered)
 
+        self.test_results_matrix = {}
+        self.original_failed_tests = {}
+
+        self.comparator = CompareOutputs()
+
+
     def run(self):
         self.notify_initialize(self.target_loader.names, self.test_loader.names)
         try:
@@ -74,13 +147,26 @@ class MutationController(views.ViewNotifier):
 
     def run_mutation_process(self):
         try:
+            # test_modules, total_duration, number_of_tests = self.load_and_check_tests()
             test_modules, total_duration, number_of_tests = self.load_and_check_tests()
 
-            self.notify_passed(test_modules, number_of_tests)
+            results = [module[1] for module in test_modules]
+            passed = [test for res in results for test in res.passed]
+            failed = [test for res in results for test in res.failed]
+
+            for test in failed:
+                test_name = get_full_test_name(test.name)
+                self.original_failed_tests[test_name] = test
+
+            self.print_test_results(passed, failed)
+            
+            # self.notify_passed(test_modules, number_of_tests)
+
             self.notify_start()
 
             self.score = MutationScore()
 
+            # test module tuple not used, only first element module because of *_
             for target_module, to_mutate in self.target_loader.load([module for module, *_ in test_modules]):
                 self.mutate_module(target_module, to_mutate, total_duration)
         except KeyboardInterrupt:
@@ -92,10 +178,13 @@ class MutationController(views.ViewNotifier):
         total_duration = 0
         for test_module, target_test in self.test_loader.load():
             result, duration = self.run_test(test_module, target_test)
-            if result.was_successful():
-                test_modules.append((test_module, target_test, duration))
-            else:
-                raise TestsFailAtOriginal(result)
+            # if result.was_successful():
+            # Allow failures
+            test_modules.append((test_module, result, target_test, duration))
+            # TODO provide result.was_success to the tuple list?
+            # test_modules.append((test_module, result.was_successful(), target_test, duration))
+            # else:
+            #     raise TestsFailAtOriginal(result)
             number_of_tests += result.tests_run()
             total_duration += duration
 
@@ -143,8 +232,47 @@ class MutationController(views.ViewNotifier):
             self.notify_incompetent(0, exception, tests_run=0)
             return None
 
+
+    def update_per_test_matrix(self, result, mutations):
+        # If HOM, this will be list of tuples
+        mutated_operators = [mutation.operator.__name__ for mutation in mutations]
+
+        self.score.overall_mutations.append(mutated_operators)
+
+        mutant_id = str(mutated_operators)
+        if mutant_id not in self.score.per_mutant_stats:
+            self.score.per_mutant_stats[mutant_id] = 0
+
+        self.score.per_mutant_stats[mutant_id] += len(mutated_operators)
+
+        if result is None:
+            # if no result, mutant survived
+            return
+
+        for killer in result.killer:
+            full_test_name = get_full_test_name(killer.name)
+
+            # check if subtest already failed before originally
+            if full_test_name in self.original_failed_tests:
+
+                # if yes, compare two outputs
+                before_mutation_out = self.original_failed_tests[full_test_name].long_message
+                after_mutation_out = killer.long_message 
+
+                if self.comparator.is_same_output(before_mutation_out, after_mutation_out):
+                    # if same, mutation did not change the testing behaviour
+                    continue
+
+
+            if full_test_name not in self.score.killer_matrix:
+                self.score.killer_matrix[full_test_name] = []
+
+            self.score.killer_matrix[full_test_name].append(mutated_operators)
+
+
     def run_tests_with_mutant(self, total_duration, mutant_module, mutations, coverage_result):
         result, duration = self.runner.run_tests_with_mutant(total_duration, mutant_module, mutations, coverage_result)
+        self.update_per_test_matrix(result, mutations)
         self.update_score_and_notify_views(result, duration)
 
     def update_score_and_notify_views(self, result, mutant_duration):
@@ -170,7 +298,8 @@ class MutationController(views.ViewNotifier):
         self.score.inc_survived()
 
     def update_killed_mutant(self, result, duration):
-        self.notify_killed(duration, result.killer, result.exception_traceback, result.tests_run)
+        # use test names in list
+        self.notify_killed(duration, str([kill.name for kill in result.killer]), result.exception_traceback, result.tests_run)
         self.score.inc_killed()
 
 

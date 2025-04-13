@@ -83,17 +83,20 @@ class MutationTestResult:
 
     def _get_killer(self):
         if self.failed:
-            return self.failed[0]
+            # return self.failed[0]
+            return self.failed # Per test run enabled
+        return []
 
     def get_killer(self):
         killer = self._get_killer()
-        if killer:
-            return killer.name
+        return killer
+        # if killer:
+        #     return [x.name for x in killer]
 
     def get_exception_traceback(self):
         killer = self._get_killer()
         if killer:
-            return killer.long_message
+            return [x.long_message for x in killer]
 
     def get_exception(self):
         return self.type_error
@@ -108,7 +111,8 @@ class MutationTestResult:
         return SerializableMutationTestResult(
             self.is_incompetent(),
             self.is_survived(),
-            str(self.get_killer()),
+            # str(self.get_killer()),
+            self.get_killer(),
             str(self.get_exception_traceback()),
             self.get_exception(),
             self.tests_run() - self.tests_skipped(),
