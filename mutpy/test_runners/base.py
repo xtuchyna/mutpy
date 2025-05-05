@@ -72,6 +72,9 @@ class MutationTestResult:
         self.type_error = None
         self.skipped = []
 
+        # for APFD metrics
+        self.test_order = {}
+
     def was_successful(self):
         return len(self.failed) == 0 and not self.is_incompetent()
 

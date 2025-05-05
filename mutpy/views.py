@@ -110,6 +110,13 @@ class TextView(QuietTextView):
             per_mutant_score = num_of_killed / score.all_mutants * 100
             self.level_print("per mutant score: ({:.1f}%) for {}".format(per_mutant_score, mutant))
 
+        self.level_print('=== Average Percentage of Faults Detected (APFD) SCORE ===', 2)
+        self.level_print("APFD score: ({:.1f}%)".format(score.get_apfd_score() * 100))
+
+        self.level_print('=== Realtive Average Percentage of Faults Detected (RAPFD) SCORE ===', 2)
+        self.level_print("RAPFD score (original order): ({:.1f}%)".format(score.get_rapfd_score() * 100))
+        self.level_print("RAPFD score (random order): ({:.1f}%)".format(score.get_random_rapfd() * 100))
+
 
     def end(self, score, duration):
         super().end(score, duration)
@@ -135,7 +142,8 @@ class TextView(QuietTextView):
     def passed(self, tests, number_of_tests):
         self.level_print('{} tests passed:'.format(number_of_tests))
 
-        for test, target, time in tests:
+        for test, result, target, time in tests:
+            # TODO do something with result
             test_name = test.__name__ + ('.' + target if target else '')
             self.level_print('{} {}'.format(test_name, self.time_format(time)), 2)
 
@@ -265,7 +273,8 @@ class YAMLReportView(AccReportView):
         with open(self.file_name, 'w') as report_file:
             yaml.dump({
                 'targets': self.target,
-                'tests': [{'name': test.__name__, 'target': target, 'time': time} for test, target, time in self.tests],
+                # TODO do something with results as _ 
+                'tests': [{'name': test.__name__, 'target': target, 'time': time} for test, _, target, time in self.tests],
                 'number_of_tests': self.number_of_tests,
                 'mutations': self.mutation_info,
                 'total_time': duration,

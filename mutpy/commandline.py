@@ -48,6 +48,8 @@ def build_parser():
     parser.add_argument('--list-hom-strategies', action='store_true', help='list available HOM strategies')
     parser.add_argument('--mutation-number', type=int, metavar='MUTATION_NUMBER',
                         help='run only one mutation (debug purpose)')
+    parser.add_argument('--eda-folder', help='save results to this folder under csv files for EDA analysis',
+                        type=str, metavar='EDA_FOLDER')
     return parser
 
 
@@ -60,6 +62,10 @@ def run_mutpy(parser):
     elif cfg.target and cfg.unit_test:
         mutation_controller = build_controller(cfg)
         mutation_controller.run()
+
+        if cfg.eda_folder:
+            mutation_controller.save_eda(cfg.eda_folder)
+
     else:
         parser.print_usage()
 
