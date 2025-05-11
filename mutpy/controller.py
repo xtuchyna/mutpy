@@ -10,6 +10,7 @@ import en_core_web_sm
 import pandas as pd
 
 import random
+import os
 
 
 from mutpy import views, utils
@@ -31,6 +32,11 @@ def get_cumulative_step_sum_of_covered_fault_area(rtf_series, all_mutants):
     """Get cumulative step sum of covered fault area."""
     faults_detected_by_first_m = map(lambda phi: phi != 0, rtf_series)
     return len( list( faults_detected_by_first_m ) ) / all_mutants
+
+def write_into_file(data: pd.DataFrame, file_full_path: str) -> None:
+    """Writes/appends into aggregation csv EDA file."""
+    file_exists = os.path.isfile(file_full_path)
+    data.to_csv(file_full_path, mode='a', header=not file_exists, index=False)
 
 
 class CompareOutputs:
@@ -247,8 +253,8 @@ class MutationController(views.ViewNotifier):
             per_test_score = kill_count / self.score.all_mutants
             csv_scores.append([test_name, per_test_score])
 
-        pd.DataFrame(csv_scores, columns=["test_name", "per_test_score"]).to_csv(folder + '/per_test.csv', mode='a', header=False, index=False)
-
+        data = pd.DataFrame(csv_scores, columns=["test_name", "per_test_score"])
+        write_into_file(data, folder + '/per_test.csv')
 
     def initialize_per_mutant_entry(op, post_process_dict) -> None:
         if op not in post_process_dict:
@@ -281,9 +287,14 @@ class MutationController(views.ViewNotifier):
 
     #     pd.DataFrame(csv_scores).to_csv(folder + '/per_mutant.csv', index=False)
 
+    def get_target_file_name(self):
+        full_path = self.target_loader.names[0]
+        return os.path.basename( full_path )
+
     def save_per_suite(self, folder: str) -> None:
         csv_score = {
             "test_module_name" : self.test_module_name,
+            "target_file": self.get_target_file_name(),
             "mutation_score": self.score.count(),
             "time_elapsed": self.duration,
             "all_mutants": self.score.all_mutants,
@@ -299,7 +310,8 @@ class MutationController(views.ViewNotifier):
             "random_rapfd_score": self.score.get_random_rapfd_score(),
         }
 
-        pd.DataFrame([csv_score]).to_csv(folder + '/per_suite.csv', mode='a', header=False, index=False)
+        data = pd.DataFrame([csv_score])
+        write_into_file(data, folder + '/per_suite.csv')
 
 
     def save_eda(self, folder):
