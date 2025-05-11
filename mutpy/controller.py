@@ -199,6 +199,10 @@ class MutationScore:
         p_m = get_cumulative_step_sum_of_covered_fault_area(rtf_series, self.all_mutants)
         return p_m - sum( rtf_series ) / (self.rapfd_constraint_m * self.all_mutants)
 
+    def get_mutation_score_as_factor(self):
+        bottom = self.all_mutants - self.incompetent_mutants
+        return ((self.killed_mutants + self.timeout_mutants) / bottom) if bottom else 0
+
     def count(self):
         bottom = self.all_mutants - self.incompetent_mutants
         return (((self.killed_mutants + self.timeout_mutants) / bottom) * 100) if bottom else 0
@@ -261,31 +265,25 @@ class MutationController(views.ViewNotifier):
             for stat_field in ["killed", "survived", "per_test_kills", "per_test_survives"]:
                 post_process_dict[op][stat_field] = 0
 
-    # def save_per_mutant(self, folder: str) -> None:
-    #     csv_scores = []
+    def save_per_mutant(self, folder: str) -> None:
+        csv_scores = []
+        for mutant, stats in self.score.per_mutant_stats.items():
+            # per_mutant_score = num_of_killed / self.score.all_mutants * 100
+            killed = stats["killed"]
+            overall = stats["generated"]
+            survived = stats["survived"]
 
-    #     postprocessed_mutants_score = {}
-    #     for test, mut_operators in self.score.killer_matrix.items():
-    #         for op in mut_operators:
-    #             initialize_per_mutant_entry(op, postprocessed_mutants_score)
-    #             postprocessed_mutants_score[op]["killed"] = 0
-    #             postprocessed_mutants_score[op]["survived"]
+            csv_scores.append({
+                "test_module": self.test_module_name,
+                "mutant_type": mutant,
+                "generated": overall,
+                "killed": killed,
+                "survived": survived,
+            })
 
-    #     for mutant, stats in self.score.per_mutant_stats.items():
-    #         # per_mutant_score = num_of_killed / self.score.all_mutants * 100
-    #         killed = stats["killed"]
-    #         overall = stats["generated"]
-    #         survived = stats["survived"]
+        data = pd.DataFrame(csv_scores)
+        write_into_file(data, folder + '/per_mutant.csv')
 
-    #         csv_scores.append({
-    #             "test_module": self.test_module_name,
-    #             "mutant_type": mutant,
-    #             "generated": overall,
-    #             "killed": killed,
-    #             "survived": survived,
-    #         })
-
-    #     pd.DataFrame(csv_scores).to_csv(folder + '/per_mutant.csv', index=False)
 
     def get_target_file_name(self):
         full_path = self.target_loader.names[0]
@@ -295,17 +293,17 @@ class MutationController(views.ViewNotifier):
         csv_score = {
             "test_module_name" : self.test_module_name,
             "target_file": self.get_target_file_name(),
-            "mutation_score": self.score.count(),
+            "mutation_score": self.score.get_mutation_score_as_factor(),
             "time_elapsed": self.duration,
             "all_mutants": self.score.all_mutants,
             "killed": self.score.killed_mutants,
-            "killed_prctg": self.score.killed_mutants / self.score.all_mutants * 100,
+            "killed_ratio": self.score.killed_mutants / self.score.all_mutants,
             "survived": self.score.survived_mutants,
-            "survived_prctg": self.score.survived_mutants / self.score.all_mutants * 100,
-            "incopetent" : self.score.incompetent_mutants,
-            "incopetent_prctg": self.score.incompetent_mutants / self.score.all_mutants * 100,
+            "survived_ratio": self.score.survived_mutants / self.score.all_mutants,
+            "incompetent" : self.score.incompetent_mutants,
+            "incompetent_ratio": self.score.incompetent_mutants / self.score.all_mutants,
             "timeout": self.score.timeout_mutants,
-            "timeout_prctg": self.score.timeout_mutants / self.score.all_mutants * 100,
+            "timeout_ratio": self.score.timeout_mutants / self.score.all_mutants,
             "rapfd_score": self.score.get_rapfd_score(),
             "random_rapfd_score": self.score.get_random_rapfd_score(),
         }
@@ -321,7 +319,7 @@ class MutationController(views.ViewNotifier):
 
         # Save to CSV per_mutant.csv
         # testsuite_name | mutants in str | per_mutant score
-        # self.save_per_mutant(folder)
+        self.save_per_mutant(folder)
 
         # Save to CSV per_suite.csv
         # testsuite_name | mut score | mt time | all | killed | killed_% | survived | surv_% | incompetent | incmpt_% | timeout | timeout_%
@@ -512,7 +510,7 @@ class MutationController(views.ViewNotifier):
         # update generated count
         killed_muts = len(real_killers)
         self.score.per_mutant_stats[mutant_id]["generated"] += 1
-        self.score.per_mutant_stats[mutant_id]["killed_per_test"] += killed_muts
+        self.score.per_mutant_stats[mutant_id]["killed"] += killed_muts
         self.score.per_mutant_stats[mutant_id]["survived"] += self.score.test_size - killed_muts
 
 
@@ -522,7 +520,7 @@ class MutationController(views.ViewNotifier):
         # removes original test failures if they are not killers
         real_killers = self.update_per_test_matrix(result, mutations)
 
-        # self.update_mutant_stats(real_killers, mutations)
+        self.update_mutant_stats(real_killers, mutations)
         self.update_apfd_list(real_killers, mutations)
 
         # make mutation score compatible with per test metrics
