@@ -82,6 +82,7 @@ class MutationTestResult:
         return bool(self.type_error)
 
     def is_survived(self):
+        # use differentiator
         return self.was_successful()
 
     def _get_killer(self):
@@ -125,6 +126,7 @@ class MutationTestResult:
         self.type_error = err
 
     def add_passed(self, name):
+        
         self.passed.append(TestInfo(name))
 
     def add_skipped(self, name):

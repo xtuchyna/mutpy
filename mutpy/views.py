@@ -97,25 +97,25 @@ class TextView(QuietTextView):
         self.level_print('Start mutants generation and execution:')
 
     def custom_print(self, score):
-        overall_killed = len(score.overall_mutations)
+        # overall_killed = len(score.overall_mutations)
 
         self.level_print('=== Per test metrics ===', 2)
-        for test_name, operators in score.killer_matrix.items():
-            killed_mutatnts = len(operators)
-            per_test_score = killed_mutatnts / overall_killed * 100
+        for test_name, killed_operators in score.killer_matrix.items():
+            kill_count = len(killed_operators)
+            per_test_score = kill_count / score.all_mutants * 100
             self.level_print("per test score: ({:.1f}%) for {}".format(per_test_score, test_name))
 
-        self.level_print('=== Per mutant metrics ===', 2)
-        for mutant, num_of_killed in score.per_mutant_stats.items():
-            per_mutant_score = num_of_killed / score.all_mutants * 100
-            self.level_print("per mutant score: ({:.1f}%) for {}".format(per_mutant_score, mutant))
+        # self.level_print('=== Per mutant stats ===', 2)
+        # for mutant, num_of_killed in score.per_mutant_stats.items():
+        #     per_mutant_score = num_of_killed / score.all_mutants * 100
+        #     self.level_print("per mutant score: ({:.1f}%) for {}".format(per_mutant_score, mutant))
 
-        self.level_print('=== Average Percentage of Faults Detected (APFD) SCORE ===', 2)
-        self.level_print("APFD score: ({:.1f}%)".format(score.get_apfd_score() * 100))
+        # self.level_print('=== Average Percentage of Faults Detected (APFD) SCORE ===', 2)
+        # self.level_print("APFD score: ({:.1f}%)".format(score.get_apfd_score() * 100))
 
         self.level_print('=== Realtive Average Percentage of Faults Detected (RAPFD) SCORE ===', 2)
         self.level_print("RAPFD score (original order): ({:.1f}%)".format(score.get_rapfd_score() * 100))
-        self.level_print("RAPFD score (random order): ({:.1f}%)".format(score.get_random_rapfd() * 100))
+        self.level_print("RAPFD score (random order): ({:.1f}%)".format(score.get_random_rapfd_score() * 100))
 
 
     def end(self, score, duration):

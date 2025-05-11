@@ -35,8 +35,9 @@ def get_cumulative_step_sum_of_covered_fault_area(rtf_series, all_mutants):
 
 class CompareOutputs:
 
-    def __init__(self):
+    def __init__(self, theta):
         self.nlp = spacy.load("en_core_web_sm")
+        self.theta = theta
 
     def is_same_output(self, text1, text2):
         # Normalize the outputs by removing leading/trailing whitespace and newlines
@@ -61,7 +62,7 @@ class CompareOutputs:
         
         # Compute cosine similarity between document vectors
         similarity = doc1.similarity(doc2)
-        return similarity > 0.90
+        return similarity > self.theta
 
 
 nlp = en_core_web_sm.load()
@@ -84,7 +85,18 @@ class TestsFailAtOriginal(Exception):
 
 class MutationScore:
 
-    def __init__(self):
+    def __init__(
+            self,
+            result,
+            rapfd_constraint_m,    
+        ):
+
+        self.killer_matrix = {
+            get_full_test_name(test.name):[] for test in result.passed + result.failed
+        }
+        self.test_size = len(self.killer_matrix.keys())
+        self.test_order = result.test_order
+
         self.killed_mutants = 0
         self.timeout_mutants = 0
         self.incompetent_mutants = 0
@@ -93,18 +105,16 @@ class MutationScore:
         self.all_nodes = 0
 
         self.overall_mutations = []
-        self.killer_matrix = {}
         self.per_mutant_stats = {}
 
         self.apfd_buffer = []
-        self.test_order = []
         self.kill_order_per_mutations = []
-        self.test_size = 0
 
         self.apfd = None
         self.rapfd = None
 
-        self.rapfd_constraint_m = 12 # TODO make it configurable
+        self.rapfd_constraint_m = rapfd_constraint_m
+
         self.rtf_series = None
 
     def get_apfd_score(self):
@@ -125,7 +135,8 @@ class MutationScore:
         return map(lambda x: x if self.rapfd_constraint_m >= x else 0, first_killers)
 
     def get_cumulative_step_sum_of_covered_fault_area(self):
-        faults_detected_by_first_m = map(lambda phi: phi != 0, self.get_rtf_series())
+        # faults_detected_by_first_m = map(lambda phi: phi != 0, self.get_rtf_series())
+        faults_detected_by_first_m = [observed_fault for observed_fault in self.get_rtf_series() if observed_fault != 0]
         return len( list( faults_detected_by_first_m ) ) / self.all_mutants
 
 
@@ -138,7 +149,7 @@ class MutationScore:
         self.rapfd = p_m - sum( self.get_rtf_series() ) / (self.rapfd_constraint_m * self.all_mutants)
         return self.rapfd
         
-    def get_random_rapfd(self):
+    def get_random_rapfd_score(self):
 
         # Original list of indices
         original_indices = [i for i in range(1,self.test_size+1)]
@@ -210,7 +221,8 @@ class MutationScore:
 class MutationController(views.ViewNotifier):
 
     def __init__(self, runner_cls, target_loader, test_loader, views, mutant_generator,
-                 timeout_factor=5, disable_stdout=False, mutate_covered=False, mutation_number=None):
+                 timeout_factor=5, disable_stdout=False, mutate_covered=False, mutation_number=None,
+                 theta_factor=0.8, rapfd_constraint_m=5):
         super().__init__(views)
         self.target_loader = target_loader
         self.test_loader = test_loader
@@ -224,32 +236,54 @@ class MutationController(views.ViewNotifier):
         self.original_failed_tests = {}
 
         self.apfd_buffer = []
-        self.comparator = CompareOutputs()
+        self.comparator = CompareOutputs(theta=theta_factor)
+
+        self.rapfd_constraint_m = rapfd_constraint_m
 
     def save_per_test(self, folder: str) -> None:
-        overall_killed = len(self.score.overall_mutations)
-
         csv_scores = []
-        for test_name, operators in self.score.killer_matrix.items():
-            killed_mutants = len(operators)
-            per_test_score = killed_mutants / overall_killed * 100
-            
+        for test_name, killed_operators in self.score.killer_matrix.items():
+            kill_count = len(killed_operators)
+            per_test_score = kill_count / self.score.all_mutants
             csv_scores.append([test_name, per_test_score])
 
-        pd.DataFrame(csv_scores, columns=["test_name", "per_test_score"]).to_csv(folder + '/per_test.csv', index=False)
+        pd.DataFrame(csv_scores, columns=["test_name", "per_test_score"]).to_csv(folder + '/per_test.csv', mode='a', header=False, index=False)
 
 
-    def save_per_mutant(self, folder: str) -> None:
-        csv_scores = []
-        for mutant, num_of_killed in self.score.per_mutant_stats.items():
-            per_mutant_score = num_of_killed / self.score.all_mutants * 100
-            csv_scores.append([self.test_suite_name, str(mutant), per_mutant_score])
+    def initialize_per_mutant_entry(op, post_process_dict) -> None:
+        if op not in post_process_dict:
+            for stat_field in ["killed", "survived", "per_test_kills", "per_test_survives"]:
+                post_process_dict[op][stat_field] = 0
 
-        pd.DataFrame(csv_scores, columns=["test_suite_name", "mutant", "per_mutant_score"]).to_csv(folder + '/per_mutant.csv', index=False)
+    # def save_per_mutant(self, folder: str) -> None:
+    #     csv_scores = []
+
+    #     postprocessed_mutants_score = {}
+    #     for test, mut_operators in self.score.killer_matrix.items():
+    #         for op in mut_operators:
+    #             initialize_per_mutant_entry(op, postprocessed_mutants_score)
+    #             postprocessed_mutants_score[op]["killed"] = 0
+    #             postprocessed_mutants_score[op]["survived"]
+
+    #     for mutant, stats in self.score.per_mutant_stats.items():
+    #         # per_mutant_score = num_of_killed / self.score.all_mutants * 100
+    #         killed = stats["killed"]
+    #         overall = stats["generated"]
+    #         survived = stats["survived"]
+
+    #         csv_scores.append({
+    #             "test_module": self.test_module_name,
+    #             "mutant_type": mutant,
+    #             "generated": overall,
+    #             "killed": killed,
+    #             "survived": survived,
+    #         })
+
+    #     pd.DataFrame(csv_scores).to_csv(folder + '/per_mutant.csv', index=False)
 
     def save_per_suite(self, folder: str) -> None:
         csv_score = {
-            "test_suite_name" : self.test_suite_name,
+            "test_module_name" : self.test_module_name,
             "mutation_score": self.score.count(),
             "time_elapsed": self.duration,
             "all_mutants": self.score.all_mutants,
@@ -261,23 +295,21 @@ class MutationController(views.ViewNotifier):
             "incopetent_prctg": self.score.incompetent_mutants / self.score.all_mutants * 100,
             "timeout": self.score.timeout_mutants,
             "timeout_prctg": self.score.timeout_mutants / self.score.all_mutants * 100,
-            # "apfd_score": self.score.apfd
+            "rapfd_score": self.score.get_rapfd_score(),
+            "random_rapfd_score": self.score.get_random_rapfd_score(),
         }
 
-        pd.DataFrame([csv_score]).to_csv(folder + '/per_suite.csv', index=False)
+        pd.DataFrame([csv_score]).to_csv(folder + '/per_suite.csv', mode='a', header=False, index=False)
 
 
     def save_eda(self, folder):
-        # I know it's ugly but it does the job
-        self.test_suite_name = list(self.score.killer_matrix.keys())[0].split(".")[0]
-
         # Save to CSV per_test.csv
         # testsuite_name | test_name | per_test score
         self.save_per_test(folder)
 
         # Save to CSV per_mutant.csv
         # testsuite_name | mutants in str | per_mutant score
-        self.save_per_mutant(folder)
+        # self.save_per_mutant(folder)
 
         # Save to CSV per_suite.csv
         # testsuite_name | mut score | mt time | all | killed | killed_% | survived | surv_% | incompetent | incmpt_% | timeout | timeout_%
@@ -319,9 +351,11 @@ class MutationController(views.ViewNotifier):
 
             self.notify_start()
 
-            self.score = MutationScore()
-            self.score.test_size = len(passed) + len(failed)
-            self.score.test_order = self.test_order
+            # self.score = MutationScore(
+            #     test_size = len(passed) + len(failed),
+            #     test_order = self.test_order,
+            #     rapfd_constraint_m = self.rapfd_constraint_m
+            # )
 
             # test module tuple not used, only first element module because of *_
             for target_module, to_mutate in self.target_loader.load([module for module, *_ in test_modules]):
@@ -340,11 +374,17 @@ class MutationController(views.ViewNotifier):
             # sort tests by their name, both fails and passes
             # test_execution_order = sorted(result.passed + result.failed, key=lambda x: x.name)
             test_modules.append((test_module, result, target_test, duration))
+            self.test_module_name = test_module.__name__
             # TODO provide result.was_success to the tuple list?
             # test_modules.append((test_module, result.was_successful(), target_test, duration))
             # else:
             #     raise TestsFailAtOriginal(result)
             
+            self.score = MutationScore(
+                result,
+                rapfd_constraint_m = self.rapfd_constraint_m
+            )
+
             # TODO support multiple test suites with multiple test orders
             self.test_order = result.test_order
 
@@ -396,37 +436,28 @@ class MutationController(views.ViewNotifier):
             return None
 
 
-    def update_apfd_list(self, result, mutations):
+    def update_apfd_list(self, real_killers, mutations):
         # survived mutants are not included in APFD, it applies only for *REVEALED* faults
-        if result is None or result.killer is None or result.killer == []:
+        if real_killers is None or real_killers == []:
             return
     
         # failed tests are returned in order of execution
         # TODO make this nicer and less corporate
-        mut_killer_test_names = [test.name.split(" ")[0] for test in result.killer]
+        mut_killer_test_names = [get_full_test_name(test.name) for test in real_killers]
 
         # TODO make it dictionary
         self.score.kill_order_per_mutations.append( [self.score.test_order[t] for t in mut_killer_test_names] )
 
     def update_per_test_matrix(self, result, mutations):
-        # calculate APFD average percentage of fault detection
-        self.update_apfd_list(result, mutations)
-
-        # If HOM, this will be list of tuples
+        # of FOM, only one operator in mutations
+        # If HOM, there will be multiple mutations.
         mutated_operators = [mutation.operator.__name__ for mutation in mutations]
-
-        self.score.overall_mutations.append(mutated_operators)
-
-        mutant_id = str(mutated_operators)
-        if mutant_id not in self.score.per_mutant_stats:
-            self.score.per_mutant_stats[mutant_id] = 0
-
-        self.score.per_mutant_stats[mutant_id] += len(mutated_operators)
 
         if result is None:
             # if no result, mutant survived
             return
-
+        
+        real_killers = []
         for killer in result.killer:
             full_test_name = get_full_test_name(killer.name)
 
@@ -445,23 +476,60 @@ class MutationController(views.ViewNotifier):
             if full_test_name not in self.score.killer_matrix:
                 self.score.killer_matrix[full_test_name] = []
 
+            # update per test metrics
             self.score.killer_matrix[full_test_name].append(mutated_operators)
+            real_killers.append(killer)
+        
+        return real_killers
+
+
+    def update_mutant_stats(self, real_killers, mutations):
+        mutated_operators = [mutation.operator.__name__ for mutation in mutations]
+
+        self.score.overall_mutations.append(mutated_operators)
+
+        # if HOM, tuple is used as ID
+        mutant_id = str(mutated_operators)
+        if mutant_id not in self.score.per_mutant_stats:
+            self.score.per_mutant_stats[mutant_id] = {
+                "generated": 0,
+                "killed": 0,
+                "survived": 0,
+            }
+
+        # update generated count
+        killed_muts = len(real_killers)
+        self.score.per_mutant_stats[mutant_id]["generated"] += 1
+        self.score.per_mutant_stats[mutant_id]["killed_per_test"] += killed_muts
+        self.score.per_mutant_stats[mutant_id]["survived"] += self.score.test_size - killed_muts
 
 
     def run_tests_with_mutant(self, total_duration, mutant_module, mutations, coverage_result):
         result, duration = self.runner.run_tests_with_mutant(total_duration, mutant_module, mutations, coverage_result)
-        self.update_per_test_matrix(result, mutations)
-        self.update_score_and_notify_views(result, duration)
 
-    def update_score_and_notify_views(self, result, mutant_duration):
+        # removes original test failures if they are not killers
+        real_killers = self.update_per_test_matrix(result, mutations)
+
+        # self.update_mutant_stats(real_killers, mutations)
+        self.update_apfd_list(real_killers, mutations)
+
+        # make mutation score compatible with per test metrics
+        self.update_score_and_notify_views(result, duration, real_killers)
+
+    def update_score_and_notify_views(self, result, mutant_duration, real_killers):
+        # due to internal mutpy logic, we need to leave timeouts for entire suite
         if not result:
             self.update_timeout_mutant(mutant_duration)
+
+        # iterate per test results.killed
+        # if mutant was killed, update per test matrix with killers BUT CHECK FOR ORIGINAL FAILURES
+
         elif result.is_incompetent:
             self.update_incompetent_mutant(result, mutant_duration)
-        elif result.is_survived:
+        elif len(real_killers) == 0:
             self.update_survived_mutant(result, mutant_duration)
         else:
-            self.update_killed_mutant(result, mutant_duration)
+            self.update_killed_mutant(result, mutant_duration, real_killers)
 
     def update_timeout_mutant(self, duration):
         self.notify_timeout(duration)
@@ -475,9 +543,9 @@ class MutationController(views.ViewNotifier):
         self.notify_survived(duration, result.tests_run)
         self.score.inc_survived()
 
-    def update_killed_mutant(self, result, duration):
+    def update_killed_mutant(self, result, duration, real_killers):
         # use test names in list
-        self.notify_killed(duration, str([kill.name for kill in result.killer]), result.exception_traceback, result.tests_run)
+        self.notify_killed(duration, str([kill.name for kill in real_killers]), result.exception_traceback, result.tests_run)
         self.score.inc_killed()
 
 

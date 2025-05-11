@@ -69,7 +69,7 @@ class UnittestMutationTestResult(unittest.TestResult):
     # because it is called after EACH test, not depeding on the result state
     def addDuration(self, test, elapsed):
         self.test_order_counter += 1
-        self.mutation_test_result.test_order[test._testMethodName] = self.test_order_counter
+        self.mutation_test_result.test_order[test.id()] = self.test_order_counter
 
 
 class UnittestCoverageResult(CoverageTestResult, unittest.TestResult):
