@@ -254,7 +254,7 @@ class MutationController(views.ViewNotifier):
         csv_scores = []
         for test_name, killed_operators in self.score.killer_matrix.items():
             kill_count = len(killed_operators)
-            per_test_score = kill_count / self.score.all_mutants
+            per_test_score = kill_count / self.score.all_mutants if self.score.all_mutants > 0 else 0
             csv_scores.append([test_name, per_test_score])
 
         data = pd.DataFrame(csv_scores, columns=["test_name", "per_test_score"])
