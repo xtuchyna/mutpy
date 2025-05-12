@@ -508,7 +508,7 @@ class MutationController(views.ViewNotifier):
             }
 
         # update generated count
-        killed_muts = len(real_killers)
+        killed_muts = len(real_killers) if real_killers is not None else 0
         self.score.per_mutant_stats[mutant_id]["generated"] += 1
         self.score.per_mutant_stats[mutant_id]["killed"] += killed_muts
         self.score.per_mutant_stats[mutant_id]["survived"] += self.score.test_size - killed_muts
