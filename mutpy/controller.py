@@ -297,13 +297,9 @@ class MutationController(views.ViewNotifier):
             "time_elapsed": self.duration,
             "all_mutants": self.score.all_mutants,
             "killed": self.score.killed_mutants,
-            "killed_ratio": self.score.killed_mutants / self.score.all_mutants,
             "survived": self.score.survived_mutants,
-            "survived_ratio": self.score.survived_mutants / self.score.all_mutants,
             "incompetent" : self.score.incompetent_mutants,
-            "incompetent_ratio": self.score.incompetent_mutants / self.score.all_mutants,
             "timeout": self.score.timeout_mutants,
-            "timeout_ratio": self.score.timeout_mutants / self.score.all_mutants,
             "rapfd_score": self.score.get_rapfd_score(),
             "random_rapfd_score": self.score.get_random_rapfd_score(),
         }
