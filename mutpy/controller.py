@@ -199,9 +199,14 @@ class MutationScore:
         p_m = get_cumulative_step_sum_of_covered_fault_area(rtf_series, self.all_mutants)
         return p_m - sum( rtf_series ) / (self.rapfd_constraint_m * self.all_mutants)
 
+    def get_valid_mutations_count(self):
+        return self.all_mutants - self.incompetent_mutants
+
     def get_mutation_score_as_factor(self):
-        bottom = self.all_mutants - self.incompetent_mutants
-        return ((self.killed_mutants + self.timeout_mutants) / bottom) if bottom else 0
+        bottom = self.get_valid_mutations_count()
+        if not bottom or bottom == 0:
+            return None
+        return ((self.killed_mutants + self.timeout_mutants) / bottom)
 
     def count(self):
         bottom = self.all_mutants - self.incompetent_mutants
@@ -252,9 +257,11 @@ class MutationController(views.ViewNotifier):
 
     def save_per_test(self, folder: str) -> None:
         csv_scores = []
+        valid_mutations = self.score.get_valid_mutations_count()
+
         for test_name, killed_operators in self.score.killer_matrix.items():
             kill_count = len(killed_operators)
-            per_test_score = kill_count / self.score.all_mutants if self.score.all_mutants > 0 else 0
+            per_test_score = kill_count / self.score.all_mutants if valid_mutations > 0 else None
             csv_scores.append([test_name, per_test_score])
 
         data = pd.DataFrame(csv_scores, columns=["test_name", "per_test_score"])
