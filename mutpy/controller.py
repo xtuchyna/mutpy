@@ -12,6 +12,7 @@ import pandas as pd
 import random
 import os
 
+from typing import Optional
 
 from mutpy import views, utils
 
@@ -133,29 +134,41 @@ class MutationScore:
 
         return self.apfd
     
-    def get_rtf_series(self):
-        if self.rtf_series is not None:
-            return self.rtf_series
+    
+    def get_rtf_series(self, kill_order_per_faults):
+        first_killers = [test_orders[0] for test_orders in kill_order_per_faults]
+        return map(lambda x: x if self.rapfd_constraint_m >= x else 0, deepcopy(first_killers))
 
-        first_killers = [test_orders[0] for test_orders in self.kill_order_per_mutations]
-        return map(lambda x: x if self.rapfd_constraint_m >= x else 0, first_killers)
-
-    def get_cumulative_step_sum_of_covered_fault_area(self):
-        # faults_detected_by_first_m = map(lambda phi: phi != 0, self.get_rtf_series())
-        faults_detected_by_first_m = [observed_fault for observed_fault in self.get_rtf_series() if observed_fault != 0]
-        return len( list( faults_detected_by_first_m ) ) / self.all_mutants
+    def get_cumulative_step_sum_of_covered_fault_area(self, rtf_series):
+        faults_detected_by_first_m = [observed_fault for observed_fault in deepcopy(rtf_series) if observed_fault != 0]
+        return len( list( faults_detected_by_first_m ) ) / self.all_mutants    
 
 
     def get_rapfd_score(self):
+        """Evaluate rapfd score if not already present.
+        
+        If no mutations were generated, return float.nan"""
         if self.rapfd is not None:
             return self.rapfd
         
-        p_m = self.get_cumulative_step_sum_of_covered_fault_area()
+        
+        if self.get_valid_mutations_count() == 0:
+            return float("nan")
 
-        self.rapfd = p_m - sum( self.get_rtf_series() ) / (self.rapfd_constraint_m * self.all_mutants)
+        rtf_series = self.get_rtf_series(
+            self.kill_order_per_mutations,
+        )
+        
+        p_m = self.get_cumulative_step_sum_of_covered_fault_area(rtf_series)
+
+        self.rapfd = p_m - sum( rtf_series ) / (self.rapfd_constraint_m * self.all_mutants)
         return self.rapfd
         
     def get_random_rapfd_score(self):
+
+        if self.get_valid_mutations_count() == 0:
+            return float("nan")
+
 
         # Original list of indices
         original_indices = [i for i in range(1,self.test_size+1)]
@@ -174,9 +187,6 @@ class MutationScore:
         # remap test order with swap map
         new_test_order = {k:get_swapped_index(v) for k,v in self.test_order.items()}
 
-        # print("Original test order: ", self.test_order)
-        # print("New test order: ", new_test_order)
-
         # remap killers order with swap map and sort (to logically retain killer order by sorting)
         # new_killers_orders = [
         #     sorted( swap_map[ith_test] for test in self.kill_order_per_mutations for ith_test in test )
@@ -189,23 +199,23 @@ class MutationScore:
             new_killers_orders.append(new_killer_order_per_killed_mutant)
 
 
-        # print("Original killers orders: ", self.kill_order_per_mutations)
-        # print("New killers orders: ", new_killers_orders)
-
         first_killers = get_first_killers(new_killers_orders)
         rtf_series = get_rtf_series(first_killers, self.rapfd_constraint_m)
 
-        # compute rapfd as previously
-        p_m = get_cumulative_step_sum_of_covered_fault_area(rtf_series, self.all_mutants)
+        # # compute rapfd as previously
+        p_m = self.get_cumulative_step_sum_of_covered_fault_area(rtf_series)
         return p_m - sum( rtf_series ) / (self.rapfd_constraint_m * self.all_mutants)
 
     def get_valid_mutations_count(self):
         return self.all_mutants - self.incompetent_mutants
 
-    def get_mutation_score_as_factor(self):
+    def get_mutation_score_as_factor(self) -> float:
+        """Return in range 0...1.
+        
+        If cannot be computed (no mutants generated) return float.nan"""
         bottom = self.get_valid_mutations_count()
         if not bottom or bottom == 0:
-            return None
+            return float("nan")
         return ((self.killed_mutants + self.timeout_mutants) / bottom)
 
     def count(self):
@@ -359,9 +369,6 @@ class MutationController(views.ViewNotifier):
 
             self.print_test_results(passed, failed)
             
-            # Todo comment out for experimental failing version
-            self.notify_passed(test_modules, number_of_tests)
-
             self.notify_start()
 
             # self.score = MutationScore(
