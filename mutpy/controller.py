@@ -319,6 +319,8 @@ class MutationController(views.ViewNotifier):
             "timeout": self.score.timeout_mutants,
             "rapfd_score": self.score.get_rapfd_score(),
             "random_rapfd_score": self.score.get_random_rapfd_score(),
+            "tests_passed":len(self.passed),
+            "tests_failed":len(self.failed),
         }
 
         data = pd.DataFrame([csv_score])
@@ -360,14 +362,14 @@ class MutationController(views.ViewNotifier):
             test_modules, total_duration, number_of_tests = self.load_and_check_tests()
 
             results = [module[1] for module in test_modules]
-            passed = [test for res in results for test in res.passed]
-            failed = [test for res in results for test in res.failed]
+            self.passed = [test for res in results for test in res.passed]
+            self.failed = [test for res in results for test in res.failed]
 
-            for test in failed:
+            for test in self.failed:
                 test_name = get_full_test_name(test.name)
                 self.original_failed_tests[test_name] = test
 
-            self.print_test_results(passed, failed)
+            self.print_test_results(self.passed, self.failed)
             
             self.notify_start()
 
