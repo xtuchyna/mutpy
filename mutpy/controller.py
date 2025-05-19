@@ -272,9 +272,10 @@ class MutationController(views.ViewNotifier):
         for test_name, killed_operators in self.score.killer_matrix.items():
             kill_count = len(killed_operators)
             per_test_score = kill_count / self.score.all_mutants if valid_mutations > 0 else None
-            csv_scores.append([test_name, per_test_score])
+            is_failed = test_name in self.original_failed_tests
+            csv_scores.append([test_name, per_test_score, is_failed])
 
-        data = pd.DataFrame(csv_scores, columns=["test_name", "per_test_score"])
+        data = pd.DataFrame(csv_scores, columns=["test_name", "per_test_score", "is_failed"])
         write_into_file(data, folder + '/per_test.csv')
 
     def initialize_per_mutant_entry(op, post_process_dict) -> None:
