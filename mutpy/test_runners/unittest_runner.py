@@ -8,8 +8,11 @@ class UnittestMutationTestResult(unittest.TestResult):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.type_error = None
-        self.failfast = True
+        self.failfast = False # Per test executuion
         self.mutation_test_result = MutationTestResult()
+
+        # for APFD metrics
+        self.test_order_counter = 0
 
     def addSuccess(self, test):
         super().addSuccess(test)
@@ -60,6 +63,13 @@ class UnittestMutationTestResult(unittest.TestResult):
     @staticmethod
     def _get_short_message(traceback):
         return traceback.split("\n")[-2]
+    
+    # for APFD metrics
+    # this is not used for duration but taken advantage for APFD
+    # because it is called after EACH test, not depeding on the result state
+    def addDuration(self, test, elapsed):
+        self.test_order_counter += 1
+        self.mutation_test_result.test_order[test.id()] = self.test_order_counter
 
 
 class UnittestCoverageResult(CoverageTestResult, unittest.TestResult):

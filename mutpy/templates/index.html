@@ -15,7 +15,7 @@
 </ul>
 <h4>Tests [{{ number_of_tests }}]</h4>
 <ul>
-    {% for test, target, time in tests %}
+    {% for test, _, target, time in tests %}
     <li><code>{{ test.__name__ }}{% if target %}.{{ target }} {% endif %}</code> [{{ time|round(3) }} s]</li>
     {% endfor %}
 </ul>
