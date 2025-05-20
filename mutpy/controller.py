@@ -56,13 +56,6 @@ class CompareOutputs:
         
         return self.is_same_using_cosine(normalized_text1, normalized_text2)
 
-
-    # def is_same_using_spaceless(text1, text2):
-    #     # Remove all spaces, including newlines, tabs, and regular spaces
-    #     cleaned_text1 = re.sub(r'\s+', '', text1)  # \s+ matches any whitespace character (space, newline, tab) one or more times
-    #     cleanmed_text2 = re.sub(r'\s+', '', text2)
-    #     return cleaned_text1 == cleanmed_text2
-
     def is_same_using_cosine(self, output_original, output_mutant):
         doc1 = nlp(output_original)
         doc2 = nlp(output_mutant)
@@ -187,12 +180,6 @@ class MutationScore:
         # remap test order with swap map
         new_test_order = {k:get_swapped_index(v) for k,v in self.test_order.items()}
 
-        # remap killers order with swap map and sort (to logically retain killer order by sorting)
-        # new_killers_orders = [
-        #     sorted( swap_map[ith_test] for test in self.kill_order_per_mutations for ith_test in test )
-        # ]
-
-
         new_killers_orders = []
         for killer_order in self.kill_order_per_mutations:
             new_killer_order_per_killed_mutant = sorted( [swap_map[ith_test] for ith_test in killer_order] )
@@ -286,7 +273,7 @@ class MutationController(views.ViewNotifier):
     def save_per_mutant(self, folder: str) -> None:
         csv_scores = []
         for mutant, stats in self.score.per_mutant_stats.items():
-            # per_mutant_score = num_of_killed / self.score.all_mutants * 100
+
             killed = stats["killed"]
             overall = stats["generated"]
             survived = stats["survived"]
@@ -329,19 +316,9 @@ class MutationController(views.ViewNotifier):
 
 
     def save_eda(self, folder):
-        # Save to CSV per_test.csv
-        # testsuite_name | test_name | per_test score
         self.save_per_test(folder)
-
-        # Save to CSV per_mutant.csv
-        # testsuite_name | mutants in str | per_mutant score
         self.save_per_mutant(folder)
-
-        # Save to CSV per_suite.csv
-        # testsuite_name | mut score | mt time | all | killed | killed_% | survived | surv_% | incompetent | incmpt_% | timeout | timeout_%
         self.save_per_suite(folder)
-
-
 
     def run(self):
         self.notify_initialize(self.target_loader.names, self.test_loader.names)
@@ -359,7 +336,6 @@ class MutationController(views.ViewNotifier):
 
     def run_mutation_process(self):
         try:
-            # test_modules, total_duration, number_of_tests = self.load_and_check_tests()
             test_modules, total_duration, number_of_tests = self.load_and_check_tests()
 
             results = [module[1] for module in test_modules]
@@ -374,12 +350,6 @@ class MutationController(views.ViewNotifier):
             
             self.notify_start()
 
-            # self.score = MutationScore(
-            #     test_size = len(passed) + len(failed),
-            #     test_order = self.test_order,
-            #     rapfd_constraint_m = self.rapfd_constraint_m
-            # )
-
             # test module tuple not used, only first element module because of *_
             for target_module, to_mutate in self.target_loader.load([module for module, *_ in test_modules]):
                 self.mutate_module(target_module, to_mutate, total_duration)
@@ -392,17 +362,12 @@ class MutationController(views.ViewNotifier):
         total_duration = 0
         for test_module, target_test in self.test_loader.load():
             result, duration = self.run_test(test_module, target_test)
-            # if result.was_successful():
+
             # Allow failures
-            # sort tests by their name, both fails and passes
-            # test_execution_order = sorted(result.passed + result.failed, key=lambda x: x.name)
             test_modules.append((test_module, result, target_test, duration))
             self.test_module_name = test_module.__name__
+
             # TODO provide result.was_success to the tuple list?
-            # test_modules.append((test_module, result.was_successful(), target_test, duration))
-            # else:
-            #     raise TestsFailAtOriginal(result)
-            
             self.score = MutationScore(
                 result,
                 rapfd_constraint_m = self.rapfd_constraint_m
@@ -465,10 +430,8 @@ class MutationController(views.ViewNotifier):
             return
     
         # failed tests are returned in order of execution
-        # TODO make this nicer and less corporate
         mut_killer_test_names = [get_full_test_name(test.name) for test in real_killers]
 
-        # TODO make it dictionary
         self.score.kill_order_per_mutations.append( [self.score.test_order[t] for t in mut_killer_test_names] )
 
     def update_per_test_matrix(self, result, mutations):
@@ -543,10 +506,7 @@ class MutationController(views.ViewNotifier):
         # due to internal mutpy logic, we need to leave timeouts for entire suite
         if not result:
             self.update_timeout_mutant(mutant_duration)
-
-        # iterate per test results.killed
-        # if mutant was killed, update per test matrix with killers BUT CHECK FOR ORIGINAL FAILURES
-
+        # TODO: more thorough and specific handling for incmpt required
         elif result.is_incompetent:
             self.update_incompetent_mutant(result, mutant_duration)
         elif len(real_killers) == 0:
